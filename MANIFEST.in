@@ -1,0 +1,3 @@
+recursive-include pretix_authorize_net/static *
+recursive-include pretix_authorize_net/templates *
+recursive-include pretix_authorize_net/locale *
