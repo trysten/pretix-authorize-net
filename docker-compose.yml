@@ -1,0 +1,11 @@
+version: '3.2'
+
+services:
+  pretix-dev:
+    build:
+      context: .
+
+  redis:
+    image: "redis"
+  postgre:
+    image: "postgres"
