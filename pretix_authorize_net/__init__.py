@@ -8,7 +8,7 @@ except ImportError:
 __version__ = '0.1.0'
 
 
-class PluginApp(PluginConfig):
+class AuthorizenetApp(PluginConfig):
     name = 'pretix_authorize_net'
     verbose_name = 'Authorize.net'
 
@@ -25,4 +25,4 @@ class PluginApp(PluginConfig):
         from . import signals  # NOQA
 
 
-default_app_config = 'pretix_authorize_net.PluginApp'
+default_app_config = 'pretix_authorize_net.AuthorizenetApp'

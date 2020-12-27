@@ -35,7 +35,7 @@ setup(
     author_email='trysten@sleepyowl.com',
     license='Apache',
 
-    install_requires=[],
+    install_requires=["authorizenet"],
     packages=find_packages(exclude=['tests', 'tests.*']),
     include_package_data=True,
     cmdclass=cmdclass,
