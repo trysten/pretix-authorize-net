@@ -5,6 +5,7 @@ from django.contrib import messages
 from collections import OrderedDict
 from pretix.base.payment import BasePaymentProvider, PaymentException
 from django.utils.translation import gettext as _
+import enum
 import logging
 
 logger = logging.getLogger(__name__)
@@ -232,17 +233,19 @@ class Authorizenet(BasePaymentProvider):
 
         response = createtransactioncontroller.getresponse()
 
+        class responseCodes(enum.Enum):
+            Approved = 1
+            Declined = 2
+            Error = 3
+            Held_for_Review = 4
+
         if response is not None:
             # Check to see if the API request was successfully received and acted upon
             if response.messages.resultCode == 'Ok':
-                # Since the API request was successful, look for a transaction response
-                # and parse it to display the results of authorizing the card
-                if hasattr(response.transactionResponse, 'transId') is True:
+                # import pdb; pdb.set_trace()
+                # The API request was successful
+                if response.transactionResponse.responseCode == responseCodes.Approved:
                     payment.info = {'id': response.transactionResponse.transId}
-                    payment.confirm()
-                else:
-                    raise PaymentException('No Transaction ID, panicking')
-                if hasattr(response.transactionResponse, 'messages') is True:
                     # logger.info(request, 'Successfully created transaction with Transaction ID: %s' % response.transactionResponse.transId)
                     # logger.info(request, 'Transaction Response Code: %s' % response.transactionResponse.responseCode)
                     # logger.info(request, 'Message Code: %s' % response.transactionResponse.messages.message[0].code)
@@ -251,42 +254,64 @@ class Authorizenet(BasePaymentProvider):
                         # messages.message is an list containing the messages. wtf?
                         payment.order.log_action('authorizenet.payment.success', data={
                             'resultCode': message.code.text,
-                            'description': message.description.text,
+                            'description': message.description,
                         })
-                    return
-                else:
-                    # logger.error('Transaction returned OK but no message')
-                    # If the resultCode is 'Ok', there shouldn't be any errors. Look for them anyway.
-                    if hasattr(response.transactionResponse, 'errors') is True:
-                        for error in response.transactionResponse.errors:
-                            payment.order.log_action('authorizenet.payment.failure', data={
-                                'errorCode': error.errorCode.text,
-                                'errorText': error.errorText.text,
-                            })
-                        # Show the errors to the customer so they can report them in person
-                        messages.warning(request, 'Error Code:  %s' % response.transactionResponse.errors.error[0].errorCode.text)
-                        messages.warning(request, 'Error message: %s' % response.transactionResponse.errors.error[0].errorText)
+                        messages.success(request, message.description)
+                    payment.confirm()
 
+                elif response.transactionResponse.responseCode == responseCodes.Declined:
+                    for message in response.transactionResponse.messages.message:
+                        payment.order.log_action('authorizenet.payment.decline', data={
+                            'resultCode': message.code.text,
+                            'description': message.description,
+                        })
+                        messages.error(request, 'Card Declined')
+                    payment.fail({'reason': response.transactionResponse.messages.message[0].description})
+
+                elif response.transactionResponse.responseCode == responseCodes.Error:
+                    # logger.error('Transaction returned OK but no message')
+                    # If the resultCode is not 'Ok', there's something wrong with the API request
+                    if hasattr(response.transactionResponse, 'errors') is True:
+                        # errors.error is the list
+                        for error in response.transactionResponse.errors.error:
+                            payment.order.log_action('authorizenet.payment.error', data={
+                                'errorCode': error.errorCode.text,
+                                'errorText': error.errorText,
+                            })
+                            messages.warning(request, 'Error Code:  %s' % error.errorCode.text)
+                            messages.warning(request, 'Error message: %s' % error.errorText)
                     else:
                         raise PaymentException('Transaction returned OK with no message or error', code='responseError')
                         # no errors either? why is this in the example code?
-                        return
-                    # Not sure if we should confirm the payment if it has errors, but go ahead for now.
                     payment.fail({'error': error.errorText.text})
-                    return
+
             # Or, log errors if the API request wasn't successful
             else:
-                # logger.warning('')
+                messages.error(request, 'API request failed, please try again later')
                 if hasattr(response, 'transactionResponse') is True and hasattr(response.transactionResponse, 'errors') is True:
-                    payment.order.log_action('authorizenet.payment.fail')
-                    messages.error(request, 'Error Code: %s' % str(response.transactionResponse.errors.error[0].errorCode))
-                    messages.error(request, 'Error message: %s' % response.transactionResponse.errors.error[0].errorText)
+                    for error in response.transactionResponse.errors.error:
+                        payment.order.log_action('authorizenet.payment.error', data={
+                            'errorCode': error.errorCode.text,
+                            'errorText': error.errorText.text,
+                        })
+                        messages.error(request, 'Error Code: %s' % error.errorCode.text)
+                        messages.error(request, 'Error message: %s' % error.errorText)
                 else:
-                    # messages.error(request, 'Error Code: %s' % response.messages.message[0]['code'].text)
-                    # messages.error(request, 'Error message: %s' % response.messages.message[0]['text'].text)
+                    # messages is django system for showing info to the user
+                    # message is the variable containing the message
+                    # TODO: disambiguate message vs messages
+                    # note the messages here are on response, not response.transactionResponse
+                    # they come from the authorizenet sdk, presumably
+                    for message in response.messages.message:
+                        payment.order.log_action('authorizenet.payment.fail', data={
+                            'errorCode': message.code.text,
+                            'errorText': message.text,
+                        })
+                        messages.error(request, 'Error Code: %s' % message.code.text)
+                        messages.error(request, 'Error message: %s' % message.text.text)
                     raise PaymentException("Failed Transaction with no errors")
         else:
-            messages.error(request, 'Could not contact API gateway')
-            raise PaymentException('Could not contact API gateway')
-            return
-    # vim:tw=139
+            payment.order.log_action('authorizenet.payment.fail')
+            # messages.error(request, 'Could not contact API gateway. Please try again later.')
+            raise PaymentException('Could not contact API gateway, please try again later')
+# vim:tw=139
