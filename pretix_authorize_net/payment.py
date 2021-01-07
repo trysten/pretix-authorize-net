@@ -145,8 +145,6 @@ class Authorizenet(BasePaymentProvider):
 
         # Create the payment data for a credit card
         creditCard = apicontractsv1.creditCardType()
-        from pprint import pprint
-        logger.debug(pprint(vars(request.session)))
         creditCard.cardNumber = request.session['payment_authorizenet_cardNumber']
         creditCard.expirationDate = request.session['payment_authorizenet_cardExpiration']
         creditCard.cardCode = request.session['payment_authorizenet_cardCode']
@@ -174,10 +172,10 @@ class Authorizenet(BasePaymentProvider):
         # customerAddress.country = "USA"
 
         # Set the customer's identifying information
-        customerData = apicontractsv1.customerDataType()
-        customerData.type = "individual"
-        customerData.id = "99999456654"
-        customerData.email = "EllenJohnson@example.com"
+        # customerData = apicontractsv1.customerDataType()
+        # customerData.type = "individual"
+        # customerData.id = "99999456654"
+        # customerData.email = "EllenJohnson@example.com"
 
         # Add values for transaction settings
         duplicateWindowSetting = apicontractsv1.settingType()
@@ -216,7 +214,7 @@ class Authorizenet(BasePaymentProvider):
         transactionrequest.payment = paymentData
         transactionrequest.order = order
         transactionrequest.billTo = customerAddress
-        transactionrequest.customer = customerData
+        # transactionrequest.customer = customerData
         transactionrequest.transactionSettings = settings
 #       transactionrequest.lineItems = line_items
 
@@ -233,40 +231,53 @@ class Authorizenet(BasePaymentProvider):
 
         response = createtransactioncontroller.getresponse()
 
-        class responseCodes(enum.Enum):
-            Approved = 1
-            Declined = 2
-            Error = 3
-            Held_for_Review = 4
+        responseCodes = enum.IntEnum(
+            'responseCodes',
+            [('Approved', 1),
+             ('Declined', 2),
+             ('Error', 3),
+             ('Held_for_Review', 4),
+             ]
+        )
+
+        def log_messages(request, response, action='authorizenet.payment.message'):
+            if hasattr(response.transactionResponse, 'messages'):
+                for message in response.transactionResponse.messages.message:
+                    payment.order.log_action(action, data={
+                        'resultCode': message.code.text,
+                        'description': message.description.text,
+                    })
+            else:
+                raise KeyError("Transaction Response does not contain 'messages'")
+
+        def log_errors(request, response, action='authorizenet.payment.error'):
+            if hasattr(response.transactionResponse, 'errors'):
+                for error in response.transactionResponse.errors.error:
+                    payment.order.log_action(action, data={
+                        'resultCode': error.errorCode.text,
+                        'description': error.errorText.text,
+                    })
+            else:
+                raise KeyError('Transaction Response does not contain "errors"')
 
         if response is not None:
             # Check to see if the API request was successfully received and acted upon
             if response.messages.resultCode == 'Ok':
-                # import pdb; pdb.set_trace()
                 # The API request was successful
                 if response.transactionResponse.responseCode == responseCodes.Approved:
                     payment.info = {'id': response.transactionResponse.transId}
-                    # logger.info(request, 'Successfully created transaction with Transaction ID: %s' % response.transactionResponse.transId)
-                    # logger.info(request, 'Transaction Response Code: %s' % response.transactionResponse.responseCode)
-                    # logger.info(request, 'Message Code: %s' % response.transactionResponse.messages.message[0].code)
-                    # logger.info(request, 'Description: %s' % response.transactionResponse.messages.message[0].description)
-                    for message in response.transactionResponse.messages.message:
-                        # messages.message is an list containing the messages. wtf?
-                        payment.order.log_action('authorizenet.payment.success', data={
-                            'resultCode': message.code.text,
-                            'description': message.description,
-                        })
-                        messages.success(request, message.description)
+                    log_messages(request, response, action='authorizenet.payment.approved')
+                    messages.success(request, response.transactionResponse.messages.message[0].description)
                     payment.confirm()
 
                 elif response.transactionResponse.responseCode == responseCodes.Declined:
-                    for message in response.transactionResponse.messages.message:
+                    for error in response.transactionResponse.errors.error:
                         payment.order.log_action('authorizenet.payment.decline', data={
-                            'resultCode': message.code.text,
-                            'description': message.description,
+                            'resultCode': error.errorCode.text,
+                            'description': error.errorText.text,
                         })
-                        messages.error(request, 'Card Declined')
-                    payment.fail({'reason': response.transactionResponse.messages.message[0].description})
+                    messages.error(request, 'Card Declined')
+                    payment.fail({'reason': response.transactionResponse.errors.error[0].errorText.text})
 
                 elif response.transactionResponse.responseCode == responseCodes.Error:
                     # logger.error('Transaction returned OK but no message')
@@ -276,7 +287,7 @@ class Authorizenet(BasePaymentProvider):
                         for error in response.transactionResponse.errors.error:
                             payment.order.log_action('authorizenet.payment.error', data={
                                 'errorCode': error.errorCode.text,
-                                'errorText': error.errorText,
+                                'errorText': error.errorText.text,
                             })
                             messages.warning(request, 'Error Code:  %s' % error.errorCode.text)
                             messages.warning(request, 'Error message: %s' % error.errorText)
