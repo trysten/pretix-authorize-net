@@ -198,7 +198,7 @@ class Authorizenet(BasePaymentProvider):
         transactionrequest.billTo = customerAddress
         # transactionrequest.customer = customerData
         transactionrequest.transactionSettings = settings
-#       transactionrequest.lineItems = line_items
+        # transactionrequest.lineItems = line_items
 
         # Assemble the complete transaction request
         createtransactionrequest = apicontractsv1.createTransactionRequest()
@@ -226,6 +226,7 @@ class Authorizenet(BasePaymentProvider):
             if hasattr(response.transactionResponse, 'messages'):
                 for message in response.transactionResponse.messages.message:
                     payment.order.log_action(action, data={
+                        'transId': response.transactionResponse.transId.text,
                         'resultCode': message.code.text,
                         'description': message.description.text,
                     })
