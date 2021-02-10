@@ -109,7 +109,7 @@ class Authorizenet(BasePaymentProvider):
         ])
 
     def settings_content_render(self, request):
-        return "This is plugin is in alpha. Refunds are not supported, but can be done manually on Authorize.net"
+        return """This is plugin is in alpha. Refunds are not supported through the plugin, but can be done manually on Authorize.net"""
 
     def payment_is_valid_session(self, request):
         """This is called at the time the user tries to place the order.
@@ -156,7 +156,7 @@ class Authorizenet(BasePaymentProvider):
 
         # Create order information
         order = apicontractsv1.orderType()
-        order.invoiceNumber = payment.order.full_code
+        order.invoiceNumber = payment.order.code
         # invoiceNumber must be <= 20 char
         order.description = "SiTFH 2021 Tickets"
         # Presumably, description will show in bank statements
@@ -185,7 +185,7 @@ class Authorizenet(BasePaymentProvider):
         # https://developer.authorize.net/api/reference/features/payment_transactions.html#Transaction_Settings
         duplicateWindowSetting.settingValue = "600"
         # set windowSetting to 1 for development. TODO: do this in test mode
-        duplicateWindowSetting.settingValue = "1"
+        # duplicateWindowSetting.settingValue = "1"
         settings = apicontractsv1.ArrayOfSetting()
         settings.setting.append(duplicateWindowSetting)
 
