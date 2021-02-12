@@ -38,7 +38,12 @@ class Authorizenet(BasePaymentProvider):
                      label=_('Solution ID'),
                      required=False
                  )),
-
+                ('purchaseDescription',
+                 forms.CharField(
+                     widget=forms.TextInput,
+                     label=_('Purchase Description'),
+                     required=True
+                 )),
             ]
         )
 
@@ -47,6 +52,7 @@ class Authorizenet(BasePaymentProvider):
         d = OrderedDict(list(super().settings_form_fields.items()) + list(Authorizenet.form_fields().items()))
         d.move_to_end('apiLoginID', last=False)
         d.move_to_end('transactionKey', last=False)
+        d.move_to_end('purchaseDescription', last=False)
         # d.move_to_end('solutionID', last=False)
         d.move_to_end('_enabled', last=False)
         return d
@@ -127,11 +133,12 @@ class Authorizenet(BasePaymentProvider):
         should be displayed inside the ‘Payment’ box on this page.
         """
         return "Your credit card information is forwarded to our payment processor using industry standard encryption. \
-            It is not stored on our servers."
+            It is not stored on our servers after the transaction is complete."
 
 #    def checkout_prepare(self, request, cart):
 #        raise Exception("checkout break")
 #        return True
+
 
     def execute_payment(self, request, payment):
         """
@@ -158,7 +165,7 @@ class Authorizenet(BasePaymentProvider):
         order = apicontractsv1.orderType()
         order.invoiceNumber = payment.order.code
         # invoiceNumber must be <= 20 char
-        order.description = "SiTFH 2021 Tickets"
+        order.description = self.settings.purchaseDescription
         # Presumably, description will show in bank statements
 
         # Set the customer's Bill To address
@@ -254,26 +261,23 @@ class Authorizenet(BasePaymentProvider):
 
         if response is not None:
             # Check to see if the API request was successfully received and acted upon
-            if response.messages.resultCode == 'Ok':
-
+            # if response.messages.resultCode == 'Ok':
+            if hasattr(response, 'transactionResponse') is True:
                 if response.transactionResponse.responseCode == responseCodes.Approved:
                     payment.info = {'id': response.transactionResponse.transId}
                     log_messages(request, response, action='authorizenet.payment.approved')
                     show_messages(request, response, level=messages.SUCCESS)
                     payment.confirm()
-
                 elif response.transactionResponse.responseCode == responseCodes.Declined:
                     log_errors(request, response, action='authorizenet.payment.decline')
                     show_errors(request, response)
                     payment.fail({'reason': response.transactionResponse.errors.error[0].errorText.text,
                                   'transId': response.transactionResponse.transId.text})
-
                 # Error response handling
                 # elif response.transactionResponse.responseCode == responseCodes.Error:
                 elif response.transactionResponse.responseCode == responseCodes.Error:
                     # If the resultCode is not 'Ok', there's something wrong with the API request
                     # errors.error is the list
-                    #import pdb; pdb.set_trace()
                     log_errors(request, response)
                     show_errors(request, response)
                     payment.fail(info={'error': response.transactionResponse.errors.error[0].errorText.text})
@@ -282,18 +286,17 @@ class Authorizenet(BasePaymentProvider):
                     log_messages(request, response)
                     show_messages(request, response)
 
-            # Or, log errors if the API request wasn't successful
+            # Or, maybe log errors if the API request wasn't successful
             else:
-                messages.error(request, 'API request failed, please try again later')
-                if hasattr(response, 'transactionResponse') is True and hasattr(response.transactionResponse, 'errors') is True:
-                    log_errors(request, response)
-                    show_errors(request, response)
-                else:
-                    # messages is django system for showing info to the user
-                    # message is the variable containing the message
-                    log_messages(request, response, action='authorizenet.payment.failure')
-                    show_messages(request, response, level=messages.SUCCESS)
-                    raise PaymentException("Failed Transaction with no errors")
+                # no transactionResponse
+                payment.fail(info={'error': 'API request failed. No Transaction Response'})
+                # messages is django system for showing info to the user
+                # message is the variable containing the message
+                log_messages(request, response, action='authorizenet.payment.failure')
+                messages.error(request, 'API request error, please try again later')
+                # no messages or errors
+                # raise PaymentException("Failed Transaction with no error or message")
+
         else:
             payment.order.log_action('authorizenet.payment.fail')
             payment.fail({'error': 'could not contact gateway, response was None'})
