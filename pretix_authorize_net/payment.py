@@ -229,34 +229,28 @@ class Authorizenet(BasePaymentProvider):
              ]
         )
 
-        def log_messages(request, response, action='authorizenet.payment.message'):
-            if hasattr(response.transactionResponse, 'messages'):
-                for message in response.transactionResponse.messages.message:
-                    payment.order.log_action(action, data={
-                        'transId': response.transactionResponse.transId.text,
-                        'resultCode': message.code.text,
-                        'description': message.description.text,
-                    })
-            else:
-                raise KeyError("Transaction Response does not contain 'messages'")
+        def log_messages(request, messagelist, action='authorizenet.payment.message'):
+            for message in messagelist:
+                payment.order.log_action(action, data={
+                    'transId': response.transactionResponse.transId.text,
+                    'resultCode': message.code.text,
+                    'description': message.description.text or message.text.text,
+                })
 
-        def log_errors(request, response, action='authorizenet.payment.error'):
-            if hasattr(response.transactionResponse, 'errors'):
-                for error in response.transactionResponse.errors.error:
-                    payment.order.log_action(action, data={
-                        'transId': response.transactionResponse.transId.text,
-                        'errorCode': error.errorCode.text,
-                        'errorText': error.errorText.text,
-                    })
-            else:
-                raise KeyError('Transaction Response does not contain "errors"')
+        def log_errors(request, errorlist, action='authorizenet.payment.error'):
+            for error in errorlist:
+                payment.order.log_action(action, data={
+                    'transId': response.transactionResponse.transId.text,
+                    'errorCode': error.errorCode.text,
+                    'errorText': error.errorText.text,
+                })
 
-        def show_messages(request, response, level=messages.INFO):
-            for message in response.transactionResponse.messages.message:
+        def show_messages(request, messagelist, level=messages.INFO):
+            for message in messagelist:
                 messages.add_message(request, level, message.description.text)
 
-        def show_errors(request, response, level=messages.ERROR, message_text=None):
-            for error in response.transactionResponse.errors.error:
+        def show_errors(request, errorlist, level=messages.ERROR, message_text=None):
+            for error in errorlist:
                 messages.add_message(request, level, error.errorText.text)
 
         if response is not None:
@@ -265,12 +259,16 @@ class Authorizenet(BasePaymentProvider):
             if hasattr(response, 'transactionResponse') is True and hasattr(response.transactionResponse, 'responseCode'):
                 if response.transactionResponse.responseCode == responseCodes.Approved:
                     payment.info = {'id': response.transactionResponse.transId}
-                    log_messages(request, response, action='authorizenet.payment.approved')
-                    show_messages(request, response, level=messages.SUCCESS)
+                    try:
+                        messagelist = response.transactionResponse.messages.message
+                    finally:
+                        pass
+                    log_messages(request, messagelist, action='authorizenet.payment.approved')
+                    show_messages(request, messagelist, level=messages.SUCCESS)
                     payment.confirm()
                 elif response.transactionResponse.responseCode == responseCodes.Declined:
-                    log_errors(request, response, action='authorizenet.payment.decline')
-                    show_errors(request, response)
+                    log_errors(request, response.transactionResponse.errors.error, action='authorizenet.payment.decline')
+                    show_errors(request, response.transactionResponse.errors.error)
                     payment.fail({'reason': response.transactionResponse.errors.error[0].errorText.text,
                                   'transId': response.transactionResponse.transId.text})
                 # Error response handling
@@ -278,13 +276,14 @@ class Authorizenet(BasePaymentProvider):
                 elif response.transactionResponse.responseCode == responseCodes.Error:
                     # If the resultCode is not 'Ok', there's something wrong with the API request
                     # errors.error is the list
-                    log_errors(request, response)
-                    show_errors(request, response)
+                    log_errors(request, response.transactionResponse.errors.error)
+                    show_errors(request, response.transactionResponse.errors.error)
                     payment.fail(info={'error': response.transactionResponse.errors.error[0].errorText.text})
 
-                elif response.transactionResponse.responseCode == responseCodes.Held_for_Review:
-                    log_messages(request, response)
-                    show_messages(request, response)
+            # we don't need hold for review
+            #    elif response.transactionResponse.responseCode == responseCodes.Held_for_Review:
+            #        log_messages(request, response)
+            #        show_messages(request, response)
 
             # Or, maybe log errors if the API request wasn't successful
             else:
@@ -293,6 +292,7 @@ class Authorizenet(BasePaymentProvider):
                 # messages is django system for showing info to the user
                 # message is the variable containing the message
                 log_messages(request, response, action='authorizenet.payment.failure')
+
                 messages.error(request, 'API request error, please try again later')
                 # no messages or errors
                 # raise PaymentException("Failed Transaction with no error or message")
