@@ -262,7 +262,7 @@ class Authorizenet(BasePaymentProvider):
         if response is not None:
             # Check to see if the API request was successfully received and acted upon
             # if response.messages.resultCode == 'Ok':
-            if hasattr(response, 'transactionResponse') is True:
+            if hasattr(response, 'transactionResponse') is True and hasattr(response.transactionResponse, 'responseCode'):
                 if response.transactionResponse.responseCode == responseCodes.Approved:
                     payment.info = {'id': response.transactionResponse.transId}
                     log_messages(request, response, action='authorizenet.payment.approved')
@@ -288,7 +288,7 @@ class Authorizenet(BasePaymentProvider):
 
             # Or, maybe log errors if the API request wasn't successful
             else:
-                # no transactionResponse
+                # no transactionResponse or no responseCode
                 payment.fail(info={'error': 'API request failed. No Transaction Response'})
                 # messages is django system for showing info to the user
                 # message is the variable containing the message
