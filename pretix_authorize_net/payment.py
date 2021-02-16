@@ -146,7 +146,6 @@ class Authorizenet(BasePaymentProvider):
         """
 
         # Create a merchantAuthenticationType object with authentication details
-        # retrieved from the constants file
         merchantAuth = apicontractsv1.merchantAuthenticationType()
         merchantAuth.name = self.settings.apiLoginID
         merchantAuth.transactionKey = self.settings.transactionKey
@@ -229,18 +228,18 @@ class Authorizenet(BasePaymentProvider):
              ]
         )
 
-        def log_messages(request, messagelist, action='authorizenet.payment.message'):
+        def log_messages(request, transId, messagelist, action='authorizenet.payment.message'):
             for message in messagelist:
                 payment.order.log_action(action, data={
-                    'transId': response.transactionResponse.transId.text,
+                    'transId': transId.text,
                     'resultCode': message.code.text,
                     'description': message.description.text or message.text.text,
                 })
 
-        def log_errors(request, errorlist, action='authorizenet.payment.error'):
+        def log_errors(request, transId, errorlist, action='authorizenet.payment.error'):
             for error in errorlist:
                 payment.order.log_action(action, data={
-                    'transId': response.transactionResponse.transId.text,
+                    'transId': transId.text,
                     'errorCode': error.errorCode.text,
                     'errorText': error.errorText.text,
                 })
@@ -257,17 +256,18 @@ class Authorizenet(BasePaymentProvider):
             # Check to see if the API request was successfully received and acted upon
             # if response.messages.resultCode == 'Ok':
             if hasattr(response, 'transactionResponse') is True and hasattr(response.transactionResponse, 'responseCode'):
+                transId = response.transactionResponse.transId
                 if response.transactionResponse.responseCode == responseCodes.Approved:
                     payment.info = {'id': response.transactionResponse.transId}
                     try:
                         messagelist = response.transactionResponse.messages.message
                     finally:
                         pass
-                    log_messages(request, messagelist, action='authorizenet.payment.approved')
+                    log_messages(request, transId, messagelist, action='authorizenet.payment.approved')
                     show_messages(request, messagelist, level=messages.SUCCESS)
                     payment.confirm()
                 elif response.transactionResponse.responseCode == responseCodes.Declined:
-                    log_errors(request, response.transactionResponse.errors.error, action='authorizenet.payment.decline')
+                    log_errors(request, transId, response.transactionResponse.errors.error, action='authorizenet.payment.decline')
                     show_errors(request, response.transactionResponse.errors.error)
                     payment.fail({'reason': response.transactionResponse.errors.error[0].errorText.text,
                                   'transId': response.transactionResponse.transId.text})
@@ -276,7 +276,7 @@ class Authorizenet(BasePaymentProvider):
                 elif response.transactionResponse.responseCode == responseCodes.Error:
                     # If the resultCode is not 'Ok', there's something wrong with the API request
                     # errors.error is the list
-                    log_errors(request, response.transactionResponse.errors.error)
+                    log_errors(request, transId, response.transactionResponse.errors.error)
                     show_errors(request, response.transactionResponse.errors.error)
                     payment.fail(info={'error': response.transactionResponse.errors.error[0].errorText.text})
 
@@ -301,4 +301,5 @@ class Authorizenet(BasePaymentProvider):
             payment.order.log_action('authorizenet.payment.fail')
             payment.fail({'error': 'could not contact gateway, response was None'})
             raise PaymentException('Could not contact API gateway, please try again later')
+        #import pdb;pdb.set_trace()
 # vim:tw=139
