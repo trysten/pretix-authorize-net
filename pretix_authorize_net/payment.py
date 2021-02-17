@@ -243,7 +243,7 @@ class Authorizenet(BasePaymentProvider):
                     'transId': transId or 0,
                     'resultCode': message.code.text,
                     # for some reason the response.messages.message is missing the .text member
-                    'description': message.description if hasattr(message, 'description') else message['text'].text,
+                    'description': message.description.text if hasattr(message, 'description') else message['text'].text,
                 })
 
         def log_errors(request, transId, errorlist, action='authorizenet.payment.error'):
