@@ -271,6 +271,7 @@ class Authorizenet(BasePaymentProvider):
             # if response.messages.resultCode == 'Ok':
             if hasattr(response, 'transactionResponse') and hasattr(response.transactionResponse, 'responseCode'):
                 if response.transactionResponse.responseCode == responseCodes.Approved:
+                    messagelist = response.transactionResponse.messages.message
                     payment.info = {'id': response.transactionResponse.transId}
                     log_messages(request, transId, messagelist, action='authorizenet.payment.approved')
                     show_messages(request, response.transactionResponse.messages.message, level=messages.SUCCESS)
