@@ -1,5 +1,6 @@
 from authorizenet import apicontractsv1
 from authorizenet.apicontrollers import createTransactionController
+from authorizenet.constants import constants
 from django import forms
 from django.contrib import messages
 from collections import OrderedDict
@@ -32,6 +33,12 @@ class Authorizenet(BasePaymentProvider):
                      label=_('Transaction Key'),
                      required=True
                  )),
+                ('productionEnabled',
+                 forms.CharField(
+                     widget=forms.CheckboxInput,
+                     label=_('Enable Production API'),
+                     required=False
+                 )),
                 ('solutionID',
                  forms.CharField(
                      widget=forms.TextInput,
@@ -50,9 +57,9 @@ class Authorizenet(BasePaymentProvider):
     @property
     def settings_form_fields(self):
         d = OrderedDict(list(super().settings_form_fields.items()) + list(Authorizenet.form_fields().items()))
-        d.move_to_end('apiLoginID', last=False)
-        d.move_to_end('transactionKey', last=False)
         d.move_to_end('purchaseDescription', last=False)
+        d.move_to_end('transactionKey', last=False)
+        d.move_to_end('apiLoginID', last=False)
         # d.move_to_end('solutionID', last=False)
         d.move_to_end('_enabled', last=False)
         return d
@@ -215,6 +222,8 @@ class Authorizenet(BasePaymentProvider):
         createtransactionrequest.transactionRequest = transactionrequest
         # Create the controller
         createtransactioncontroller = createTransactionController(createtransactionrequest)
+        if self.settings.productionEnabled:
+            createtransactioncontroller.setenvironment(constants.PRODUCTION)
         createtransactioncontroller.execute()
 
         response = createtransactioncontroller.getresponse()
@@ -231,15 +240,16 @@ class Authorizenet(BasePaymentProvider):
         def log_messages(request, transId, messagelist, action='authorizenet.payment.message'):
             for message in messagelist:
                 payment.order.log_action(action, data={
-                    'transId': transId.text,
+                    'transId': transId or 0,
                     'resultCode': message.code.text,
-                    'description': message.description.text or message.text.text,
+                    # for some reason the response.messages.message is missing the .text member
+                    'description': message.description if hasattr(message, 'description') else message['text'].text,
                 })
 
         def log_errors(request, transId, errorlist, action='authorizenet.payment.error'):
             for error in errorlist:
                 payment.order.log_action(action, data={
-                    'transId': transId.text,
+                    'transId': transId or 0,
                     'errorCode': error.errorCode.text,
                     'errorText': error.errorText.text,
                 })
@@ -253,19 +263,19 @@ class Authorizenet(BasePaymentProvider):
                 messages.add_message(request, level, error.errorText.text)
 
         if response is not None:
+            try:
+                transId = int(response.transactionResponse.transId)
+            except AttributeError:
+                transId = 0
             # Check to see if the API request was successfully received and acted upon
             # if response.messages.resultCode == 'Ok':
-            if hasattr(response, 'transactionResponse') is True and hasattr(response.transactionResponse, 'responseCode'):
-                transId = response.transactionResponse.transId
+            if hasattr(response, 'transactionResponse') and hasattr(response.transactionResponse, 'responseCode'):
                 if response.transactionResponse.responseCode == responseCodes.Approved:
                     payment.info = {'id': response.transactionResponse.transId}
-                    try:
-                        messagelist = response.transactionResponse.messages.message
-                    finally:
-                        pass
                     log_messages(request, transId, messagelist, action='authorizenet.payment.approved')
-                    show_messages(request, messagelist, level=messages.SUCCESS)
+                    show_messages(request, response.transactionResponse.messages.message, level=messages.SUCCESS)
                     payment.confirm()
+
                 elif response.transactionResponse.responseCode == responseCodes.Declined:
                     log_errors(request, transId, response.transactionResponse.errors.error, action='authorizenet.payment.decline')
                     show_errors(request, response.transactionResponse.errors.error)
@@ -287,11 +297,12 @@ class Authorizenet(BasePaymentProvider):
 
             # Or, maybe log errors if the API request wasn't successful
             else:
-                # no transactionResponse or no responseCode
+               # no transactionResponse or no responseCode
                 payment.fail(info={'error': 'API request failed. No Transaction Response'})
                 # messages is django system for showing info to the user
                 # message is the variable containing the message
-                log_messages(request, response, action='authorizenet.payment.failure')
+                # import pdb; pdb.set_trace()
+                log_messages(request, transId, response.messages.message, action='authorizenet.payment.failure')
 
                 messages.error(request, 'API request error, please try again later')
                 # no messages or errors
@@ -301,5 +312,4 @@ class Authorizenet(BasePaymentProvider):
             payment.order.log_action('authorizenet.payment.fail')
             payment.fail({'error': 'could not contact gateway, response was None'})
             raise PaymentException('Could not contact API gateway, please try again later')
-        #import pdb;pdb.set_trace()
 # vim:tw=139
