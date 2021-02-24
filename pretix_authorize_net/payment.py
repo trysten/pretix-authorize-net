@@ -34,10 +34,11 @@ class Authorizenet(BasePaymentProvider):
                      required=True
                  )),
                 ('productionEnabled',
-                 forms.CharField(
+                 forms.BooleanField(
                      widget=forms.CheckboxInput,
                      label=_('Enable Production API'),
-                     required=False
+                     required=False,
+                     initial=False
                  )),
                 ('solutionID',
                  forms.CharField(
@@ -47,7 +48,7 @@ class Authorizenet(BasePaymentProvider):
                  )),
                 ('purchaseDescription',
                  forms.CharField(
-                     widget=forms.TextInput,
+                     widget=forms.TextInput(attrs={'placeholder': 'Appears on bank statements'}),
                      label=_('Purchase Description'),
                      required=True
                  )),
@@ -61,11 +62,14 @@ class Authorizenet(BasePaymentProvider):
         d.move_to_end('transactionKey', last=False)
         d.move_to_end('apiLoginID', last=False)
         # d.move_to_end('solutionID', last=False)
+        d.move_to_end('productionEnabled', last=False)
         d.move_to_end('_enabled', last=False)
         return d
 
     @property
     def payment_form_fields(self):
+        states = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'DC', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY']
+        states_choices = zip(states, states)
         return OrderedDict([
             ('firstName',
              forms.CharField(
@@ -91,9 +95,10 @@ class Authorizenet(BasePaymentProvider):
                  required=True
              )),
             ('state',
-             forms.CharField(
+             forms.ChoiceField(
                  label=_('State'),
-                 required=True
+                 required=True,
+                 choices=states_choices
              )),
             ('zip',
              forms.IntegerField(
@@ -145,7 +150,6 @@ class Authorizenet(BasePaymentProvider):
 #    def checkout_prepare(self, request, cart):
 #        raise Exception("checkout break")
 #        return True
-
 
     def execute_payment(self, request, payment):
         """
@@ -222,7 +226,9 @@ class Authorizenet(BasePaymentProvider):
         createtransactionrequest.transactionRequest = transactionrequest
         # Create the controller
         createtransactioncontroller = createTransactionController(createtransactionrequest)
-        if self.settings.productionEnabled:
+        # BooleanField is not deserializing properly
+        # this might be a bug in pretix or perhaps django-hierarkey
+        if self.settings.get('productionEnabled', as_type=bool):
             createtransactioncontroller.setenvironment(constants.PRODUCTION)
         createtransactioncontroller.execute()
 
@@ -290,15 +296,16 @@ class Authorizenet(BasePaymentProvider):
                     log_errors(request, transId, response.transactionResponse.errors.error)
                     show_errors(request, response.transactionResponse.errors.error)
                     payment.fail(info={'error': response.transactionResponse.errors.error[0].errorText.text})
+                    raise PaymentException('Transaction Declined')
 
-            # we don't need hold for review
-            #    elif response.transactionResponse.responseCode == responseCodes.Held_for_Review:
-            #        log_messages(request, response)
-            #        show_messages(request, response)
+                # we don't use hold for review
+                elif response.transactionResponse.responseCode == responseCodes.Held_for_Review:
+                    log_messages(request, transId, response.transactionResponse.messages.message)
+                    show_messages(request, response.transactionResponse.messages.message)
 
             # Or, maybe log errors if the API request wasn't successful
             else:
-               # no transactionResponse or no responseCode
+                # no transactionResponse or no responseCode
                 payment.fail(info={'error': 'API request failed. No Transaction Response'})
                 # messages is django system for showing info to the user
                 # message is the variable containing the message
