@@ -6,6 +6,7 @@ from django.contrib import messages
 from collections import OrderedDict
 from pretix.base.payment import BasePaymentProvider, PaymentException
 from django.utils.translation import gettext as _
+from django.core.validators import RegexValidator
 import enum
 import logging
 
@@ -108,21 +109,24 @@ class Authorizenet(BasePaymentProvider):
              )),
             ('cardNumber',
              forms.CharField(
-                 widget=forms.TextInput,
+                 widget=forms.TextInput(attrs={'placeholder': 'Card Number, No Spaces'}),
                  label=_('Card Number'),
-                 required=True
+                 required=True,
+                 validators=[RegexValidator(r"\d{15,19}")]
              )),
             ('cardExpiration',
              forms.CharField(
-                 widget=forms.TextInput(attrs={'placeholder': "mm/yy"}),
-                 label=_('Card Expiration Date'),
-                 required=True
+                 widget=forms.TextInput(attrs={"placeholder": "mm/yy"}),
+                 help_text="Please use format MM/YY",
+                 label=_("Card Expiration Date"),
+                 required=True,
              )),
             ('cardCode',
              forms.CharField(
                  widget=forms.TextInput(attrs={'placeholder': "Code on Back of Card"}),
                  label=_('Card Code'),
-                 required=True
+                 required=True,
+                 validators=[RegexValidator(r"\d{3}")]
              )),
         ])
 
