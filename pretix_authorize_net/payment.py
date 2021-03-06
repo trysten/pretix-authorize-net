@@ -119,7 +119,7 @@ class Authorizenet(BasePaymentProvider):
                  required=True
              )),
             ('cardCode',
-             forms.IntegerField(
+             forms.CharField(
                  widget=forms.TextInput(attrs={'placeholder': "Code on Back of Card"}),
                  label=_('Card Code'),
                  required=True
