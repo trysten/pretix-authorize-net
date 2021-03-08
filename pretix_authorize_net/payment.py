@@ -112,7 +112,7 @@ class Authorizenet(BasePaymentProvider):
                  widget=forms.TextInput(attrs={'placeholder': 'Card Number, No Spaces'}),
                  label=_('Card Number'),
                  required=True,
-                 validators=[RegexValidator(r"\d{15,19}")]
+                 validators=[RegexValidator(r"\d{15,16}")]
              )),
             ('cardExpiration',
              forms.CharField(
@@ -204,7 +204,7 @@ class Authorizenet(BasePaymentProvider):
         duplicateWindowSetting.settingName = "duplicateWindow"
         # Set duplicateWindow to 10min. Subsequent identical transactions will be rejected.
         # https://developer.authorize.net/api/reference/features/payment_transactions.html#Transaction_Settings
-        duplicateWindowSetting.settingValue = "600"
+        duplicateWindowSetting.settingValue = "10"
         # set windowSetting to 1 for development. TODO: do this in test mode
         # duplicateWindowSetting.settingValue = "1"
         settings = apicontractsv1.ArrayOfSetting()
